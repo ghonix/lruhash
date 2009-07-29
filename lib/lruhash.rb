@@ -11,8 +11,16 @@
 # makes use of the fact that the new Ruby hash maintains insertion
 # order. It should be better than the version for older Rubys as it relies
 # on the native hash for most of its operations
-if RUBY_VERSION.to_f >= 1.9 
+if RUBY_VERSION.to_f >= 2.9 
   module LRU
+    def timeout
+      @timeout
+    end
+    
+    def timeout=(value)
+      @timeout = value
+    end
+    
     def max
       @max ||= 256
     end
@@ -23,21 +31,28 @@ if RUBY_VERSION.to_f >= 1.9
     end
       
     def [](key)
-      if value = super(key)
+      if record = super(key)
         self.delete(key)
-        self[key] = value
+        record[:last_visited] = (Time.now.to_f*1000).to_i
+        self[key] = record
       end
     end
     
     def []=(key,value)
+      now = (Time.now.to_f*1000).to_i
       unless self[key]
         self.shift while self.length > (max - 1)
       end
-      super(key,value)
+      record = { :value => value, :last_visited => (Time.now.to_f*1000).to_i }
+      super(key,record)
     end
   end
 
   class LRUHash < Hash
+    def initialize(timeout, *args)
+      timout = timeout
+      super(*args)
+    end
     include LRU
   end
 
@@ -52,9 +67,10 @@ else
     # that are accepted by a normal hash
     # it initializes and internal hash with those
     # argumnets
-    def initialize(*args)
+    def initialize(timeout, *args)
       @max = 256
       @head = @tail = nil
+      @timeout = timeout
       @store = Hash.new(*args)
     end
     
@@ -70,6 +86,7 @@ else
     def [](key)
       if record = touch(key)
         trail(record)
+        record[:last_visited] = (Time.now.to_f*1000).to_i
         record[:value]
       end
     end
@@ -81,11 +98,19 @@ else
     def []=(key,value)
       if record = touch(key)
         trail(record)
+        record[:last_visited] = (Time.now.to_f*1000).to_i
         record[:value] = value
       else
-        shift if @store.length >= @max 
+        record = @head
+        if(record)
+          if( ( (record[:last_visited] + @timeout) < (Time.now.to_f*1000).to_i)  )
+            self.delete record[:key]
+          elsif (@store.length+1 > @max)
+            return nil
+          end
+        end
 
-        record = {:key=> key, :value=>value,:previous=>nil, :next=>nil}
+        record = {:key=> key, :value=>value, :last_visited => (Time.now.to_f*1000).to_i, :previous=>nil, :next=>nil}
         @store[key] = record
         if @store.length == 1
           @head = @tail = record
@@ -180,7 +205,7 @@ end
 if __FILE__ == $0
   def setup
     @arr = [3,2,1,0,4,5,7,6,8,9]
-    @h = LRUHash.new
+    @h = LRUHash.new 1000
     @arr.each {|e| @h[e] = e }
   end
   test_cases = {
@@ -256,17 +281,28 @@ if __FILE__ == $0
       print arr == [6,8,9,3,5,13]
       print ' '
     end,
+    :test_timeout => Proc.new do
+      @h.max = 6
+      sleep 2
+      @h[10]=10
+      arr = []
+      @h.each do |key,value|
+        arr << key
+      end
+      print arr
+      print ' '
+    end,
     :test_performance => Proc.new do
-      @h = LRUHash.new
+      @h = LRUHash.new 4000
       t = Time.now
-      count = 15000
+      count = 1000000
       count.times do |i|
         x = rand(count)
         @h[x] = x
         @h[rand(count)]
         @h[x]
       end
-      print Time.now - t < 1
+      print Time.now - t
       print ' '
     end
   }
