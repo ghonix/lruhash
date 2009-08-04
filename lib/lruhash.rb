@@ -104,7 +104,7 @@ else
         record = @head
         if(record)
           if( ( (record[:last_visited] + @timeout) < (Time.now.to_f*1000).to_i)  )
-            self.delete record[:key]
+            self.shift
           elsif (@store.length+1 > @max)
             return nil
           end
@@ -278,7 +278,7 @@ if __FILE__ == $0
       @h.each do |key,value|
         arr << key
       end
-      print arr == [6,8,9,3,5,13]
+      print arr == [7,6,8,9,3,5]
       print ' '
     end,
     :test_timeout => Proc.new do
@@ -289,7 +289,7 @@ if __FILE__ == $0
       @h.each do |key,value|
         arr << key
       end
-      print arr
+      print arr == [5, 7, 6, 8, 9, 10]
       print ' '
     end,
     :test_performance => Proc.new do
